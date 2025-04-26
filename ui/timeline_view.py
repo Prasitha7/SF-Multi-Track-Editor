@@ -1,12 +1,13 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QSizePolicy
 from PyQt6.QtGui import QPainter, QPen, QFont
 from PyQt6.QtCore import Qt
 from core.audio_clip import AudioClip
 from core.track import Track
-from ui.waveform_widget import WaveformWidget
+from ui.clip_widget import ClipWidget
+
 
 PIXELS_PER_SECOND = 100
-INITIAL_DURATION = 60  # in seconds
+INITIAL_DURATION = 60  # seconds
 
 class Ruler(QWidget):
     def __init__(self, duration=INITIAL_DURATION, parent=None):
@@ -48,9 +49,14 @@ class TrackWidget(QFrame):
         self.label = QLabel(f"Track {track_number}", self)
         self.label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        self.layout = QVBoxLayout()
-        self.layout.addWidget(self.label)
-        self.setLayout(self.layout)
+        self.clip_layout = QHBoxLayout()
+        self.clip_layout.setSpacing(10)
+        self.clip_layout.setContentsMargins(5, 5, 5, 5)
+
+        track_main_layout = QVBoxLayout()
+        track_main_layout.addWidget(self.label)
+        track_main_layout.addLayout(self.clip_layout)
+        self.setLayout(track_main_layout)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -63,11 +69,12 @@ class TrackWidget(QFrame):
             if file_path.lower().endswith(('.mp3', '.wav')):
                 clip = AudioClip(file_path)
                 self.backend_track.add_clip(clip)
-                self.label.setText(f"Dropped: {file_path.split('/')[-1]}")
+
+                clip_widget = ClipWidget(clip.audio, pixels_per_second=PIXELS_PER_SECOND)
+                self.clip_layout.addWidget(clip_widget)
+
 
                 self.notify_duration_change(clip.duration)
-                waveform = WaveformWidget(clip.audio, pixels_per_second=PIXELS_PER_SECOND)
-                self.layout.addWidget(waveform)
             else:
                 self.label.setText("Invalid file type")
 
