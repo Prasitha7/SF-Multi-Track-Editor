@@ -3,11 +3,17 @@ from PyQt6.QtWidgets import (
     QScrollArea
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QPushButton
+import simpleaudio as sa
+from pydub import AudioSegment
+
+
 from core.audio_clip import AudioClip
 from core.track import Track
 from ui.clip_widget import ClipWidget
 from ui.properties_panel import PropertiesPanel
 from ui.playhead import Playhead
+
 
 
 PIXELS_PER_SECOND = 100
@@ -80,11 +86,12 @@ class TimelineWidget(QWidget):
         self.project_timeline = project_timeline
         self.duration = INITIAL_DURATION
 
+        # === Tracks ===
+        self.track_widgets = []
         self.layout = QVBoxLayout()
         self.layout.setSpacing(10)
         self.layout.setContentsMargins(10, 10, 10, 10)
 
-        self.track_widgets = []
         for i, track in enumerate(self.project_timeline.tracks):
             track_widget = TrackWidget(
                 i + 1,
@@ -96,31 +103,52 @@ class TimelineWidget(QWidget):
             self.layout.addWidget(track_widget)
 
         self.layout.addStretch()
+
         self.timeline_area = QWidget()
         self.timeline_area.setLayout(self.layout)
         self.timeline_area.setMinimumWidth(self.duration * PIXELS_PER_SECOND)
 
-        # Scrollable timeline
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setWidget(self.timeline_area)
 
-        # Properties Panel
+        # === Properties Panel ===
         self.properties_panel = PropertiesPanel()
         self.properties_panel.hide()
 
-        # Main layout (Timeline + Property Panel)
-        main_layout = QHBoxLayout()
-        main_layout.addWidget(self.scroll)
-        main_layout.addWidget(self.properties_panel)
-        self.setLayout(main_layout)
+        # === Play Button ===
+        self.play_button = QPushButton("Play")
+        self.play_button.setFixedWidth(100)
+        self.play_button.clicked.connect(self.toggle_playback)
 
-        #Playhead
+        # === Playhead (Red Line) ===
+        from ui.playhead import Playhead
         self.playhead = Playhead(parent=self.timeline_area)
         self.playhead.show()
 
         self.timer = None
         self.playing = False
+
+        # === Layouts ===
+
+        # Top bar with Play Button
+        topbar_layout = QHBoxLayout()
+        topbar_layout.addWidget(self.play_button)
+        topbar_layout.addStretch()
+
+        # Timeline and Properties side-by-side
+        timeline_with_props = QHBoxLayout()
+        timeline_with_props.addWidget(self.scroll)
+        timeline_with_props.addWidget(self.properties_panel)
+
+        # Full Layout
+        full_layout = QVBoxLayout()
+        full_layout.addLayout(topbar_layout)          # First row
+        full_layout.addLayout(timeline_with_props)    # Second row
+
+        self.setLayout(full_layout)
+
+
 
     def extend_if_needed(self, clip_duration):
         required_duration = int(clip_duration) + 5
@@ -184,4 +212,11 @@ class TimelineWidget(QWidget):
             self.timer.stop()
         self.playing = False
 
+    def toggle_playback(self):
+        if not self.playing:
+            self.start_playback()
+            self.play_button.setText("Pause")
+        else:
+            self.stop_playback()
+            self.play_button.setText("Play")
 
