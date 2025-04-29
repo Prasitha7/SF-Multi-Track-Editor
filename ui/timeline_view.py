@@ -4,8 +4,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QPushButton
-import simpleaudio as sa
 from pydub import AudioSegment
+import pygame
 
 
 from core.audio_clip import AudioClip
@@ -84,6 +84,7 @@ class TimelineWidget(QWidget):
     def __init__(self, project_timeline):
         super().__init__()
         self.project_timeline = project_timeline
+        self.final_audio = None
         self.duration = INITIAL_DURATION
 
         # === Tracks ===
@@ -120,6 +121,10 @@ class TimelineWidget(QWidget):
         self.play_button = QPushButton("Play")
         self.play_button.setFixedWidth(100)
         self.play_button.clicked.connect(self.toggle_playback)
+        # === Save Button ===
+        self.save_button = QPushButton("Save Mixdown")
+        self.save_button.setFixedWidth(120)
+        self.save_button.clicked.connect(self.save_mixdown)
 
         # === Playhead (Red Line) ===
         from ui.playhead import Playhead
@@ -131,10 +136,12 @@ class TimelineWidget(QWidget):
 
         # === Layouts ===
 
-        # Top bar with Play Button
+        # Top bar 
         topbar_layout = QHBoxLayout()
         topbar_layout.addWidget(self.play_button)
+        topbar_layout.addWidget(self.save_button)
         topbar_layout.addStretch()
+
 
         # Timeline and Properties side-by-side
         timeline_with_props = QHBoxLayout()
@@ -191,13 +198,33 @@ class TimelineWidget(QWidget):
         if self.playing:
             return
         from PyQt6.QtCore import QTimer
+        import os
+
         self.playing = True
+
+        self.mix_project_audio()
+        if self.final_audio is None:
+            self.stop_playback()
+            return
+
+        # Make sure temp folder exists
+        if not os.path.exists("temp"):
+            os.makedirs("temp")
+
+        # Save compiled mix to a permanent temp file
+        self.final_audio.export("temp/compiled_mixdown.wav", format="wav")
+
+        # Play using pygame
+        pygame.mixer.init()
+        pygame.mixer.music.load("temp/compiled_mixdown.wav")
+        pygame.mixer.music.play()
+
         self.playhead.x_pos = 0
         self.playhead.move_to(0)
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.move_playhead)
-        self.timer.start(50)  # Move every 50ms (~20 fps)
+        self.timer.start(50)
 
     def move_playhead(self):
         step = PIXELS_PER_SECOND / 20  # 50ms -> 1s/20
@@ -210,7 +237,10 @@ class TimelineWidget(QWidget):
     def stop_playback(self):
         if self.timer:
             self.timer.stop()
+        if pygame.mixer.get_init():
+            pygame.mixer.music.stop()
         self.playing = False
+
 
     def toggle_playback(self):
         if not self.playing:
@@ -219,4 +249,69 @@ class TimelineWidget(QWidget):
         else:
             self.stop_playback()
             self.play_button.setText("Play")
+
+    def mix_project_audio(self):
+        """
+        Create final compiled timeline from all clips.
+        """
+
+        print("Mixing project audio...")
+        # Determine total length
+        total_duration_ms = 0
+
+        track_segments = []
+
+        for track_widget in self.track_widgets:
+            track_audio = AudioSegment.silent(duration=self.duration * 1000)
+
+            # Walk each clip in the track
+            for clip_widget in track_widget.clip_area.children():
+                if isinstance(clip_widget, ClipWidget):
+                    clip_audio = clip_widget.audio_clip
+
+                    clip_start_sec = clip_widget.x() / PIXELS_PER_SECOND
+                    clip_start_ms = int(clip_start_sec * 1000)
+
+                    # Place clip at correct location
+                    track_audio = track_audio.overlay(clip_audio, position=clip_start_ms)
+
+                    total_duration_ms = max(total_duration_ms, clip_start_ms + len(clip_audio))
+
+            track_segments.append(track_audio)
+
+        if not track_segments:
+            self.final_audio = None
+            return
+
+        # Mix tracks together
+        final_mix = track_segments[0]
+        for segment in track_segments[1:]:
+            final_mix = final_mix.overlay(segment)
+
+        # Trim to actual content length
+        self.final_audio = final_mix[:total_duration_ms]
+        print(f"Final compiled length: {total_duration_ms/1000:.2f} seconds")
+
+    def save_mixdown(self):
+        if self.final_audio is None:
+            self.mix_project_audio()
+
+        if self.final_audio is None:
+            print("Nothing to save.")
+            return
+
+        from PyQt6.QtWidgets import QFileDialog
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Mixdown",
+            "",
+            "WAV files (*.wav)"
+        )
+
+        if file_path:
+            if not file_path.endswith(".wav"):
+                file_path += ".wav"
+            self.final_audio.export(file_path, format="wav")
+            print(f"Mixdown saved to {file_path}")
 
