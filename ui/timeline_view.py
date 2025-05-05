@@ -1,3 +1,6 @@
+import os
+import shutil
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QSizePolicy,
     QScrollArea
@@ -13,6 +16,7 @@ from core.track import Track
 from ui.clip_widget import ClipWidget
 from ui.properties_panel import PropertiesPanel
 from ui.playhead import Playhead
+from storage.session_io import load_session_from_file, save_session_to_file
 
 
 
@@ -20,8 +24,9 @@ PIXELS_PER_SECOND = 100
 INITIAL_DURATION = 60  # seconds
 
 class TrackWidget(QFrame):
-    def __init__(self, track_number, backend_track: Track, notify_duration_change, notify_clip_selected):
+    def __init__(self, track_number, backend_track, notify_duration_change, notify_clip_selected, sync_path):
         super().__init__()
+        self.sync_path = sync_path
         self.track_number = track_number
         self.backend_track = backend_track
         self.notify_duration_change = notify_duration_change
@@ -49,6 +54,7 @@ class TrackWidget(QFrame):
 
         self.current_x = 0
 
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
@@ -58,18 +64,37 @@ class TrackWidget(QFrame):
         if urls:
             file_path = urls[0].toLocalFile()
             if file_path.lower().endswith(('.mp3', '.wav')):
-                clip = AudioClip(file_path)
-                self.backend_track.add_clip(clip)
+                # Use the correct sync folder path
+                asset_dir = os.path.join(self.sync_path, "assets")
+                os.makedirs(asset_dir, exist_ok=True)
 
-                clip_widget = ClipWidget(clip.audio, pixels_per_second=PIXELS_PER_SECOND, parent=self.clip_area)
-                clip_widget.move(self.current_x, 0)
-                clip_widget.show()
+                filename = os.path.basename(file_path)
+                asset_path = os.path.join(asset_dir, filename)
 
-                clip_widget.mousePressEvent = self.wrap_clip_select(clip_widget)
+                # Copy if not already in assets/
+                if not os.path.exists(asset_path):
+                    try:
+                        shutil.copy2(file_path, asset_path)
+                    except Exception as e:
+                        self.label.setText(f"Copy failed: {e}")
+                        return
 
-                self.current_x += clip_widget.width()
+                try:
+                    clip = AudioClip(asset_path)
+                    clip.source_path = asset_path  # make sure AudioClip supports this
+                    self.backend_track.add_clip(clip)
 
-                self.notify_duration_change(clip.duration)
+                    clip_widget = ClipWidget(clip.audio, pixels_per_second=PIXELS_PER_SECOND, parent=self.clip_area)
+                    clip_widget.move(self.current_x, 0)
+                    clip_widget.show()
+
+                    clip_widget.mousePressEvent = self.wrap_clip_select(clip_widget)
+
+                    self.current_x += clip_widget.width()
+                    self.notify_duration_change(clip.duration)
+
+                except Exception as e:
+                    self.label.setText(f"Failed to load clip: {e}")
             else:
                 self.label.setText("Invalid file type")
 
@@ -80,12 +105,14 @@ class TrackWidget(QFrame):
             ClipWidget.mousePressEvent(clip_widget, event)
         return handler
 
+
 class TimelineWidget(QWidget):
-    def __init__(self, project_timeline):
+    def __init__(self, project_timeline, sync_path=None): 
         super().__init__()
         self.project_timeline = project_timeline
         self.final_audio = None
         self.duration = INITIAL_DURATION
+        self.sync_path = sync_path
 
         # === Tracks ===
         self.track_widgets = []
@@ -98,7 +125,8 @@ class TimelineWidget(QWidget):
                 i + 1,
                 track,
                 notify_duration_change=self.extend_if_needed,
-                notify_clip_selected=self.on_clip_selected
+                notify_clip_selected=self.on_clip_selected,
+                sync_path=self.sync_path
             )
             self.track_widgets.append(track_widget)
             self.layout.addWidget(track_widget)
@@ -121,10 +149,15 @@ class TimelineWidget(QWidget):
         self.play_button = QPushButton("Play")
         self.play_button.setFixedWidth(100)
         self.play_button.clicked.connect(self.toggle_playback)
-        # === Save Button ===
+        # === Save Buttons ===
         self.save_button = QPushButton("Save Mixdown")
         self.save_button.setFixedWidth(120)
         self.save_button.clicked.connect(self.save_mixdown)
+
+        self.session_save_button = QPushButton("Save Project")
+        self.session_save_button.setFixedWidth(120)
+        self.session_save_button.clicked.connect(self.save_session_only)
+
 
         # === Playhead (Red Line) ===
         from ui.playhead import Playhead
@@ -141,6 +174,7 @@ class TimelineWidget(QWidget):
         topbar_layout.addWidget(self.play_button)
         topbar_layout.addWidget(self.save_button)
         topbar_layout.addStretch()
+        topbar_layout.addWidget(self.session_save_button)
 
 
         # Timeline and Properties side-by-side
@@ -300,18 +334,25 @@ class TimelineWidget(QWidget):
             print("Nothing to save.")
             return
 
-        from PyQt6.QtWidgets import QFileDialog
+        if not hasattr(self, "sync_path"):
+            print("No sync_path set — cannot save.")
+            return
 
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Mixdown",
-            "",
-            "WAV files (*.wav)"
-        )
+        save_path = os.path.join(self.sync_path, "compiled.wav")
+        try:
+            self.final_audio.export(save_path, format="wav")
+            print(f"Auto-saved to {save_path}")
+        except Exception as e:
+            print(f"[ERROR] Failed to save mixdown: {e}")
 
-        if file_path:
-            if not file_path.endswith(".wav"):
-                file_path += ".wav"
-            self.final_audio.export(file_path, format="wav")
-            print(f"Mixdown saved to {file_path}")
 
+    def save_session_only(self):
+        if not hasattr(self, "sync_path"):
+            print("No sync_path set — cannot save session.")
+            return
+        try:
+            from storage.session_io import save_session_to_file
+            save_session_to_file(self.project_timeline, self.sync_path)
+            print(f"Session saved to {os.path.join(self.sync_path, 'session.json')}")
+        except Exception as e:
+            print(f"[ERROR] Failed to save session: {e}")

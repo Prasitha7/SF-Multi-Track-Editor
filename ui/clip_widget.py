@@ -22,6 +22,7 @@ class ClipWidget(QWidget):
 
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
+
     def update_audio_clip(self):
         start_ms = int(self.start_time_offset * 1000)
         end_ms = len(self.original_audio) - int(self.end_time_offset * 1000)

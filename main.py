@@ -13,6 +13,12 @@ from core.track import Track
 from ui.timeline_view import TimelineWidget
 from ui.project_sync import ProjectSyncManager
 from pydub import AudioSegment
+from storage.session_io import load_session_from_file, save_session_to_file
+
+# === Save last-used path to this file ===
+def get_last_sync_path_file():
+    return os.path.join(os.getcwd(), ".last_sync_path")
+
 
 class CompiledAudioStatusWidget(QWidget):
     def __init__(self):
@@ -36,13 +42,13 @@ class CompiledAudioStatusWidget(QWidget):
         modified = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(path)))
         self.status_label.setText(f"Compiled: {os.path.basename(path)} | Size: {size:.2f} MB | Last updated: {modified}")
 
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PyAudioEditor")
         self.resize(1200, 800)
 
-        # Project Sync Logic
         self.sync_manager = ProjectSyncManager()
 
         # === Speaker Sidebar ===
@@ -88,12 +94,25 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self.setStatusBar(QStatusBar())
 
+        # === Load last used sync folder if available ===
+        try:
+            with open(get_last_sync_path_file(), "r") as f:
+                last_path = f.read().strip()
+                if os.path.exists(last_path):
+                    self.sync_manager.set_sync_folder(last_path)
+                    self.sync_label.setText(f"Sync Folder: {os.path.basename(last_path)}")
+                    self.reload_speakers()
+        except Exception as e:
+            print(f"[INFO] No previous sync folder found: {e}")
+
     def pick_sync_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Sync Folder")
         if folder:
             self.sync_manager.set_sync_folder(folder)
             self.sync_label.setText(f"Sync Folder: {os.path.basename(folder)}")
             self.reload_speakers()
+            with open(get_last_sync_path_file(), "w") as f:
+                f.write(folder)
 
     def reload_speakers(self):
         self.speaker_list.clear()
@@ -108,7 +127,6 @@ class MainWindow(QMainWindow):
             return
 
         self.sync_manager.reload_speakers()
-
         if not self.sync_manager.speakers:
             self.statusBar().showMessage("No speakers found in sync folder.", 5000)
             return
@@ -123,21 +141,25 @@ class MainWindow(QMainWindow):
     def load_timeline_for_speaker(self, item):
         speaker_name = item.data(1)
         speaker_data = self.sync_manager.speakers.get(speaker_name)
+        session_path = os.path.join(speaker_data["path"], "session.json")
 
         if speaker_name not in self.timeline_widgets:
-            timeline = Timeline(speaker_name)
-            for _ in range(8):
-                timeline.add_track(Track())
-            twidget = TimelineWidget(timeline)
-            twidget.sync_path = speaker_data["path"]  # for export use
+            if os.path.exists(session_path):
+                timeline = load_session_from_file(session_path)
+            else:
+                timeline = Timeline(speaker_name)
+                for _ in range(8):
+                    timeline.add_track(Track())
+
+            twidget = TimelineWidget(timeline, sync_path=speaker_data["path"])
             self.timeline_widgets[speaker_name] = twidget
 
-            # Export compiled.wav automatically
             def export_to_compiled():
                 twidget.mix_project_audio()
                 final = twidget.final_audio
                 if final:
                     final.export(os.path.join(twidget.sync_path, "compiled.wav"), format="wav")
+                    save_session_to_file(twidget.project_timeline, twidget.sync_path)
 
             export_to_compiled()
 
@@ -152,6 +174,7 @@ class MainWindow(QMainWindow):
         self.timeline_layout.addWidget(twidget)
         self.audio_status_widget.update_status(speaker_data)
         self.timeline_layout.addWidget(self.audio_status_widget)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
