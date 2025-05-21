@@ -1,3 +1,4 @@
+#ui\properties_panel.py
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton
 
 class PropertiesPanel(QWidget):

@@ -1,3 +1,4 @@
+#core\audio_clip.py
 from pydub import AudioSegment
 
 class AudioClip:
@@ -7,6 +8,8 @@ class AudioClip:
         self.start_time = start_time
         self.audio = AudioSegment.from_file(file_path)
         self.duration = duration if duration else len(self.audio) / 1000.0  # in seconds
+        self.trim_start = 0.0
+        self.trim_end = len(self.audio) / 1000.0
 
     def trim(self, start: float, end: float):
         start_ms = int(start * 1000)

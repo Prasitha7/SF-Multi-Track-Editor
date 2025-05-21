@@ -1,3 +1,4 @@
+#ui\timeline_view.py
 import os
 import shutil
 
@@ -231,24 +232,31 @@ class TimelineWidget(QWidget):
     def start_playback(self):
         if self.playing:
             return
+
         from PyQt6.QtCore import QTimer
         import os
 
         self.playing = True
 
         self.mix_project_audio()
-        if self.final_audio is None:
+        if self.final_audio is None or len(self.final_audio) == 0:
             self.stop_playback()
+            print("[ERROR] No audio to play.")
             return
+
+        # Ensure mixer is reset to avoid file locks
+        if pygame.mixer.get_init():
+            pygame.mixer.music.stop()
+            pygame.mixer.quit()
 
         # Make sure temp folder exists
         if not os.path.exists("temp"):
             os.makedirs("temp")
 
-        # Save compiled mix to a permanent temp file
+        # Save compiled mix to file
         self.final_audio.export("temp/compiled_mixdown.wav", format="wav")
 
-        # Play using pygame
+        # Start playback
         pygame.mixer.init()
         pygame.mixer.music.load("temp/compiled_mixdown.wav")
         pygame.mixer.music.play()
@@ -259,6 +267,7 @@ class TimelineWidget(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.move_playhead)
         self.timer.start(50)
+
 
     def move_playhead(self):
         step = PIXELS_PER_SECOND / 20  # 50ms -> 1s/20
@@ -327,23 +336,34 @@ class TimelineWidget(QWidget):
         print(f"Final compiled length: {total_duration_ms/1000:.2f} seconds")
 
     def save_mixdown(self):
-        if self.final_audio is None:
-            self.mix_project_audio()
+        self.mix_project_audio()
 
-        if self.final_audio is None:
-            print("Nothing to save.")
+        if self.final_audio is None or len(self.final_audio) == 0:
+            print("[ERROR] No audio to export.")
             return
 
         if not hasattr(self, "sync_path"):
             print("No sync_path set — cannot save.")
             return
 
-        save_path = os.path.join(self.sync_path, "compiled.wav")
         try:
+            save_path = os.path.join(self.sync_path, "compiled.wav")
             self.final_audio.export(save_path, format="wav")
             print(f"Auto-saved to {save_path}")
+
+            from storage.session_io import save_session_to_file
+            save_session_to_file(self.project_timeline, self.sync_path)
+            print(f"Session saved to {os.path.join(self.sync_path, 'session.json')}")
+
         except Exception as e:
-            print(f"[ERROR] Failed to save mixdown: {e}")
+            print(f"[ERROR] Failed to save mixdown or session: {e}")
+
+            save_path = os.path.join(self.sync_path, "compiled.wav")
+            try:
+                self.final_audio.export(save_path, format="wav")
+                print(f"Auto-saved to {save_path}")
+            except Exception as e:
+                print(f"[ERROR] Failed to save mixdown: {e}")
 
 
     def save_session_only(self):
