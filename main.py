@@ -13,6 +13,7 @@ from core.timeline import Timeline
 from core.track import Track
 from ui.timeline_view import TimelineWidget
 from ui.project_sync import ProjectSyncManager
+from ui.playback import mix_project_audio
 from pydub import AudioSegment
 from storage.session_io import load_session_from_file, save_session_to_file
 
@@ -156,8 +157,8 @@ class MainWindow(QMainWindow):
             self.timeline_widgets[speaker_name] = twidget
 
             def export_to_compiled():
-                twidget.mix_project_audio()
-                final = twidget.final_audio
+                final = mix_project_audio(twidget.track_widgets, twidget.duration)
+                twidget.final_audio = final
                 if final:
                     final.export(os.path.join(twidget.sync_path, "compiled.wav"), format="wav")
                     save_session_to_file(twidget.project_timeline, twidget.sync_path)
