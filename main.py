@@ -116,8 +116,17 @@ class MainWindow(QMainWindow):
                 f.write(folder)
 
     def reload_speakers(self):
+        """Reload speaker data while preserving existing timelines."""
+        # Capture previously selected speaker and timeline widgets
+        prev_selected = None
+        current_item = self.speaker_list.currentItem()
+        if current_item:
+            prev_selected = current_item.data(1)
+
+        prev_widgets = dict(self.timeline_widgets)
+
+        # Clear UI elements
         self.speaker_list.clear()
-        self.timeline_widgets.clear()
         for i in reversed(range(self.timeline_layout.count())):
             widget = self.timeline_layout.itemAt(i).widget()
             if widget:
@@ -127,17 +136,43 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("No sync folder selected.", 5000)
             return
 
+        # Reload speaker data from disk
         self.sync_manager.reload_speakers()
         if not self.sync_manager.speakers:
+            self.timeline_widgets = {}
             self.statusBar().showMessage("No speakers found in sync folder.", 5000)
             return
 
+        # Rebuild speaker list and preserve existing widgets
+        self.timeline_widgets = {}
         for speaker in self.sync_manager.get_speaker_list():
-            item = QListWidgetItem(f"🔊 {speaker['name']}")
-            item.setData(1, speaker["name"])
+            name = speaker["name"]
+            item = QListWidgetItem(f"🔊 {name}")
+            item.setData(1, name)
             self.speaker_list.addItem(item)
 
-        self.statusBar().showMessage(f"Loaded {len(self.sync_manager.speakers)} speakers.", 3000)
+            if name in prev_widgets:
+                self.timeline_widgets[name] = prev_widgets[name]
+
+        # Reselect previously active speaker if still present
+        if prev_selected and prev_selected in self.sync_manager.speakers:
+            # Set selection back to the previous speaker
+            for i in range(self.speaker_list.count()):
+                item = self.speaker_list.item(i)
+                if item.data(1) == prev_selected:
+                    self.speaker_list.setCurrentItem(item)
+                    break
+
+            twidget = self.timeline_widgets.get(prev_selected)
+            if twidget:
+                self.timeline_layout.addWidget(twidget)
+                speaker_data = self.sync_manager.speakers.get(prev_selected)
+                self.audio_status_widget.update_status(speaker_data)
+                self.timeline_layout.addWidget(self.audio_status_widget)
+
+        self.statusBar().showMessage(
+            f"Loaded {len(self.sync_manager.speakers)} speakers.", 3000
+        )
 
     def load_timeline_for_speaker(self, item):
         speaker_name = item.data(1)
