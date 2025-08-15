@@ -55,6 +55,16 @@ class TrackWidget(QFrame):
 
         self.current_x = 0
 
+        # Populate existing clips
+        for clip in self.backend_track.clips:
+            widget = ClipWidget(clip, pixels_per_second=PIXELS_PER_SECOND, parent=self.clip_area)
+            x = int(clip.start_time * PIXELS_PER_SECOND)
+            widget.move(x, 0)
+            widget.show()
+            widget.mousePressEvent = self.wrap_clip_select(widget)
+            self.current_x = max(self.current_x, x + widget.width())
+            self.notify_duration_change(clip.start_time + clip.duration)
+
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -83,16 +93,17 @@ class TrackWidget(QFrame):
                 try:
                     clip = AudioClip(asset_path)
                     clip.source_path = asset_path  # make sure AudioClip supports this
+                    clip.start_time = self.current_x / PIXELS_PER_SECOND
                     self.backend_track.add_clip(clip)
 
-                    clip_widget = ClipWidget(clip.audio, pixels_per_second=PIXELS_PER_SECOND, parent=self.clip_area)
+                    clip_widget = ClipWidget(clip, pixels_per_second=PIXELS_PER_SECOND, parent=self.clip_area)
                     clip_widget.move(self.current_x, 0)
                     clip_widget.show()
 
                     clip_widget.mousePressEvent = self.wrap_clip_select(clip_widget)
 
                     self.current_x += clip_widget.width()
-                    self.notify_duration_change(clip.duration)
+                    self.notify_duration_change(clip.start_time + clip.duration)
 
                 except Exception as e:
                     self.label.setText(f"Failed to load clip: {e}")
@@ -197,6 +208,15 @@ class TimelineWidget(QWidget):
         if required_duration > self.duration:
             self.duration = required_duration
             self.timeline_area.setMinimumWidth(self.duration * PIXELS_PER_SECOND)
+
+    def sync_backend_from_widgets(self):
+        for track_widget, backend_track in zip(self.track_widgets, self.project_timeline.tracks):
+            backend_track.clips = []
+            for widget in track_widget.clip_area.children():
+                if isinstance(widget, ClipWidget):
+                    clip = widget.backend_clip
+                    clip.start_time = widget.x() / PIXELS_PER_SECOND
+                    backend_track.add_clip(clip)
 
     def on_clip_selected(self, clip_widget):
         self.selected_clip = clip_widget
@@ -336,6 +356,7 @@ class TimelineWidget(QWidget):
         print(f"Final compiled length: {total_duration_ms/1000:.2f} seconds")
 
     def save_mixdown(self):
+        self.sync_backend_from_widgets()
         self.mix_project_audio()
 
         if self.final_audio is None or len(self.final_audio) == 0:
@@ -351,7 +372,6 @@ class TimelineWidget(QWidget):
             self.final_audio.export(save_path, format="wav")
             print(f"Auto-saved to {save_path}")
 
-            from storage.session_io import save_session_to_file
             save_session_to_file(self.project_timeline, self.sync_path)
             print(f"Session saved to {os.path.join(self.sync_path, 'session.json')}")
 
@@ -371,7 +391,7 @@ class TimelineWidget(QWidget):
             print("No sync_path set — cannot save session.")
             return
         try:
-            from storage.session_io import save_session_to_file
+            self.sync_backend_from_widgets()
             save_session_to_file(self.project_timeline, self.sync_path)
             print(f"Session saved to {os.path.join(self.sync_path, 'session.json')}")
         except Exception as e:

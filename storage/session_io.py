@@ -39,7 +39,7 @@ def save_session_to_file(timeline: Timeline, speaker_path: str):
                 "file": rel_path.replace('\\', '/'),
                 "start_time": clip.start_time,
                 "trim_start": clip.trim_start,
-                "trim_end": clip.trim_end
+                "trim_end": clip.trim_end,
             }
             track_data["clips"].append(clip_data)
         session_data["tracks"].append(track_data)
@@ -69,7 +69,7 @@ def load_session_from_file(session_path: str) -> Timeline:
                     file_path,
                     start_time=clip_data.get("start_time", 0.0),
                     trim_start=clip_data.get("trim_start", 0.0),
-                    trim_end=clip_data.get("trim_end", None)
+                    trim_end=clip_data.get("trim_end", 0.0),
                 )
                 clip.source_path = file_path
                 track.add_clip(clip)
