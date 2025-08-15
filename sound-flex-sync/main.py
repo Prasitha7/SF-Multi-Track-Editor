@@ -35,15 +35,11 @@ class OBJECT_OT_sync_speaker_audio(Operator):
 
         speaker = obj.data
 
+        # ensure custom prop exists
         try:
-            _ = speaker.speaker_audio_data  # Force Blender to initialize
+            _ = speaker.speaker_audio_data
         except Exception as e:
             self.report({'ERROR'}, f"Failed to access speaker_audio_data: {e}")
-            return {'CANCELLED'}
-
-        data = getattr(speaker, 'speaker_audio_data', None)
-        if not data:
-            self.report({'ERROR'}, f"Speaker {obj.name} has no sync data (even after force init).")
             return {'CANCELLED'}
 
         compiled_audio_path = bpy.path.abspath(f"//{SYNC_FOLDER}/speakers/{obj.name}/compiled.wav")
@@ -53,20 +49,52 @@ class OBJECT_OT_sync_speaker_audio(Operator):
             return {'CANCELLED'}
 
         try:
-            file_mtime = os.path.getmtime(compiled_audio_path)
-            last_sync = data.last_sync_time
-            if file_mtime <= last_sync:
-                self.report({'INFO'}, f"{obj.name} is already up-to-date.")
-                return {'CANCELLED'}
+            abs_target = os.path.abspath(compiled_audio_path)
 
-            sound = bpy.data.sounds.load(compiled_audio_path, check_existing=True)
+            # Case A: same sound already assigned -> force a disk reload
+            if speaker.sound and os.path.abspath(bpy.path.abspath(speaker.sound.filepath)) == abs_target:
+                try:
+                    speaker.sound.reload()  # re-read from disk
+                    # bump a dummy value so Blender marks depsgraph dirty
+                    speaker.volume = float(speaker.volume)
+                    speaker.speaker_audio_data.last_sync_time = time.time()
+                    self.report({'INFO'}, f"Reloaded (from disk): {compiled_audio_path}")
+                    return {'FINISHED'}
+                except Exception as e:
+                    # fall through to hard reload path below
+                    pass
+
+            # Case B: clean any cached datablocks that point to this file
+            to_remove = []
+            for snd in bpy.data.sounds:
+                if os.path.abspath(bpy.path.abspath(snd.filepath)) == abs_target:
+                    to_remove.append(snd)
+
+            # clear users before removing
+            for snd in to_remove:
+                if speaker.sound == snd:
+                    speaker.sound = None
+                snd.user_clear()
+                try:
+                    bpy.data.sounds.remove(snd)
+                except RuntimeError:
+                    # if still in use somewhere else, skip removal
+                    pass
+
+            # Load fresh without reusing cache
+            sound = bpy.data.sounds.load(compiled_audio_path, check_existing=False)
             speaker.sound = sound
-            data.last_sync_time = time.time()
-            self.report({'INFO'}, f"Loaded and synced: {compiled_audio_path}")
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to load sound: {e}")
 
-        return {'FINISHED'}
+            # optional: set last_sync_time, but we don't use it to block reloads anymore
+            speaker.speaker_audio_data.last_sync_time = time.time()
+
+            self.report({'INFO'}, f"Loaded fresh: {compiled_audio_path}")
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to load/reload sound: {e}")
+            return {'CANCELLED'}
+
 
 class OBJECT_OT_request_audio_export(Operator):
     bl_idname = "speaker.request_export"
