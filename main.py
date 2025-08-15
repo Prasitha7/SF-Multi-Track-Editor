@@ -195,6 +195,7 @@ class MainWindow(QMainWindow):
                 final = twidget.final_audio
                 if final:
                     final.export(os.path.join(twidget.sync_path, "compiled.wav"), format="wav")
+                    twidget.sync_backend_from_widgets()
                     save_session_to_file(twidget.project_timeline, twidget.sync_path)
 
             export_to_compiled()

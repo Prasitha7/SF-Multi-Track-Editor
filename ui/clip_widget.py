@@ -4,15 +4,18 @@ from PyQt6.QtGui import QPainter, QPen, QColor, QMouseEvent, QKeyEvent
 from PyQt6.QtCore import Qt
 import numpy as np
 from pydub import AudioSegment
+from core.audio_clip import AudioClip
+
 
 class ClipWidget(QWidget):
     RESIZE_MARGIN = 10
 
-    def __init__(self, audio_segment: AudioSegment, pixels_per_second=100, parent=None):
+    def __init__(self, clip: AudioClip, pixels_per_second=100, parent=None):
         super().__init__(parent)
-        self.original_audio = audio_segment
-        self.start_time_offset = 0.0
-        self.end_time_offset = 0.0
+        self.backend_clip = clip
+        self.original_audio = AudioSegment.from_file(clip.source_path)
+        self.start_time_offset = clip.trim_start
+        self.end_time_offset = clip.trim_end
         self.pixels_per_second = pixels_per_second
 
         self.selected = False
@@ -31,6 +34,10 @@ class ClipWidget(QWidget):
         self.duration = len(self.audio_clip) / 1000.0
         self.samples = self.extract_samples(self.audio_clip)
         self.setFixedWidth(int(self.duration * self.pixels_per_second))
+        self.backend_clip.audio = self.audio_clip
+        self.backend_clip.trim_start = self.start_time_offset
+        self.backend_clip.trim_end = self.end_time_offset
+        self.backend_clip.duration = self.duration
         self.update()
 
     def extract_samples(self, segment):

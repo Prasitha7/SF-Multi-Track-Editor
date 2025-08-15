@@ -16,7 +16,7 @@ from bpy.app.handlers import persistent
 from bpy.props import PointerProperty, BoolProperty, FloatProperty
 from bpy.types import PropertyGroup, Operator, Panel
 
-SYNC_FOLDER = "sf-synch"
+SYNC_FOLDER = "sf-sync"
 
 # Data container for speaker sync info
 class SpeakerAudioData(PropertyGroup):
