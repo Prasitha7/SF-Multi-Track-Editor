@@ -17,6 +17,7 @@ from core.track import Track
 from ui.clip_widget import ClipWidget
 from ui.properties_panel import PropertiesPanel
 from ui.playhead import Playhead
+from ui.timeline_ruler import TimelineRuler
 from storage.session_io import load_session_from_file, save_session_to_file
 
 
@@ -108,12 +109,25 @@ class TrackWidget(QFrame):
 
 
 class TimelineWidget(QWidget):
-    def __init__(self, project_timeline, sync_path=None): 
+    def __init__(self, project_timeline, sync_path=None, export_settings=None):
         super().__init__()
         self.project_timeline = project_timeline
         self.final_audio = None
-        self.duration = INITIAL_DURATION
         self.sync_path = sync_path
+        self.export_settings = export_settings or {}
+
+        # === Timeline metadata from Blender ===
+        scene_data = self.export_settings.get("scene", {})
+        sound_data = self.export_settings.get("sound", {})
+        self.frame_start = int(scene_data.get("frame_start", 0))
+        self.fps = float(scene_data.get("fps", 24.0))
+        self.clip_start = float(sound_data.get("clip_start_seconds", 0.0))
+        clip_end = float(sound_data.get("clip_end_seconds", INITIAL_DURATION))
+        duration_from_export = clip_end - self.clip_start
+        if 0 < duration_from_export < 3600:
+            self.duration = int(duration_from_export)
+        else:
+            self.duration = INITIAL_DURATION
 
         # === Tracks ===
         self.track_widgets = []
@@ -121,13 +135,23 @@ class TimelineWidget(QWidget):
         self.layout.setSpacing(10)
         self.layout.setContentsMargins(10, 10, 10, 10)
 
+        # Ruler at top of timeline
+        self.ruler = TimelineRuler(
+            self.duration,
+            PIXELS_PER_SECOND,
+            frame_start=self.frame_start,
+            fps=self.fps,
+            clip_start_seconds=self.clip_start,
+        )
+        self.layout.addWidget(self.ruler)
+
         for i, track in enumerate(self.project_timeline.tracks):
             track_widget = TrackWidget(
                 i + 1,
                 track,
                 notify_duration_change=self.extend_if_needed,
                 notify_clip_selected=self.on_clip_selected,
-                sync_path=self.sync_path
+                sync_path=self.sync_path,
             )
             self.track_widgets.append(track_widget)
             self.layout.addWidget(track_widget)
@@ -197,6 +221,7 @@ class TimelineWidget(QWidget):
         if required_duration > self.duration:
             self.duration = required_duration
             self.timeline_area.setMinimumWidth(self.duration * PIXELS_PER_SECOND)
+            self.ruler.set_duration(self.duration)
 
     def on_clip_selected(self, clip_widget):
         self.selected_clip = clip_widget

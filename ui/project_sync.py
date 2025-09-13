@@ -25,6 +25,17 @@ class ProjectSyncManager:
             if os.path.isdir(speaker_path):
                 compiled = os.path.join(speaker_path, "compiled.wav")
                 request = os.path.join(speaker_path, "export_request.json")
+
+                # Attempt to load Blender export settings if present
+                export_settings_path = os.path.join(speaker_path, "export_settings.json")
+                export_settings = None
+                if os.path.exists(export_settings_path):
+                    try:
+                        with open(export_settings_path, "r") as f:
+                            export_settings = json.load(f)
+                    except Exception as e:
+                        print(f"[ERROR] Failed to read {export_settings_path}: {e}")
+
                 self.speakers[name] = {
                     "name": name,
                     "path": speaker_path,
@@ -32,6 +43,7 @@ class ProjectSyncManager:
                     "request_file": request,
                     "needs_export": os.path.exists(request),
                     "has_audio": os.path.exists(compiled),
+                    "export_settings": export_settings,
                 }
 
     def get_speaker_list(self):

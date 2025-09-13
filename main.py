@@ -187,7 +187,11 @@ class MainWindow(QMainWindow):
                 for _ in range(8):
                     timeline.add_track(Track())
 
-            twidget = TimelineWidget(timeline, sync_path=speaker_data["path"])
+            twidget = TimelineWidget(
+                timeline,
+                sync_path=speaker_data["path"],
+                export_settings=speaker_data.get("export_settings"),
+            )
             self.timeline_widgets[speaker_name] = twidget
 
             def export_to_compiled():
