@@ -119,10 +119,15 @@ class TimelineWidget(QWidget):
         # === Timeline metadata from Blender ===
         scene_data = self.export_settings.get("scene", {})
         sound_data = self.export_settings.get("sound", {})
-        self.frame_start = int(scene_data.get("frame_start", 0))
-        self.fps = float(scene_data.get("fps", 24.0))
-        self.clip_start = float(sound_data.get("clip_start_seconds", 0.0))
-        clip_end = float(sound_data.get("clip_end_seconds", INITIAL_DURATION))
+        self.frame_start = int(scene_data.get("frame_start") or 0)
+        self.fps = float(scene_data.get("fps") or 24.0)
+        self.clip_start = float(sound_data.get("clip_start_seconds") or 0.0)
+        clip_end_raw = sound_data.get("clip_end_seconds")
+        clip_end = (
+            float(clip_end_raw)
+            if isinstance(clip_end_raw, (int, float))
+            else self.clip_start + INITIAL_DURATION
+        )
         duration_from_export = clip_end - self.clip_start
         if 0 < duration_from_export < 3600:
             self.duration = int(duration_from_export)
