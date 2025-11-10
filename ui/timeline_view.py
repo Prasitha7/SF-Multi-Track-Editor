@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QScrollArea
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPainter, QPen, QColor
 from PyQt6.QtWidgets import QPushButton
 from pydub import AudioSegment
 import pygame
@@ -25,14 +26,52 @@ from storage.session_io import load_session_from_file, save_session_to_file
 PIXELS_PER_SECOND = 100
 INITIAL_DURATION = 60  # seconds
 
+class TrackClipArea(QWidget):
+    def __init__(self, duration, pixels_per_second, fps):
+        super().__init__()
+        self.duration = float(duration)
+        self.pixels_per_second = float(pixels_per_second)
+        self.fps = float(fps) if fps else 0.0
+
+        self.setMinimumHeight(80)
+        self.setMinimumWidth(int(self.duration * self.pixels_per_second))
+
+    def set_duration(self, duration):
+        self.duration = float(duration)
+        self.setMinimumWidth(int(self.duration * self.pixels_per_second))
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(238, 238, 238))
+
+        if self.fps <= 0:
+            return
+
+        frame_step_pixels = self.pixels_per_second / self.fps
+        if frame_step_pixels <= 0:
+            return
+
+        total_frames = int(round(self.duration * self.fps)) + 1
+        pen = QPen(QColor(200, 200, 200))
+        pen.setWidth(1)
+        painter.setPen(pen)
+
+        tick_height = 8
+        for frame_index in range(total_frames):
+            x = int(round(frame_index * frame_step_pixels))
+            painter.drawLine(x, 0, x, tick_height)
+
+
 class TrackWidget(QFrame):
-    def __init__(self, track_number, backend_track, notify_duration_change, notify_clip_selected, sync_path):
+    def __init__(self, track_number, backend_track, notify_duration_change, notify_clip_selected, sync_path, fps, timeline_duration):
         super().__init__()
         self.sync_path = sync_path
         self.track_number = track_number
         self.backend_track = backend_track
         self.notify_duration_change = notify_duration_change
         self.notify_clip_selected = notify_clip_selected
+        self.fps = fps
 
         self.setAcceptDrops(True)
         self.setFrameShape(QFrame.Shape.Box)
@@ -45,9 +84,7 @@ class TrackWidget(QFrame):
         self.track_layout = QVBoxLayout()
         self.track_layout.addWidget(self.label)
 
-        self.clip_area = QWidget()
-        self.clip_area.setMinimumHeight(80)
-        self.clip_area.setStyleSheet("background-color: #eee;")
+        self.clip_area = TrackClipArea(timeline_duration, PIXELS_PER_SECOND, self.fps)
         self.clip_area.setLayout(QVBoxLayout())
         self.clip_area.layout().setContentsMargins(0, 0, 0, 0)
 
@@ -55,6 +92,10 @@ class TrackWidget(QFrame):
         self.setLayout(self.track_layout)
 
         self.current_x = 0
+
+
+    def set_timeline_duration(self, duration):
+        self.clip_area.set_duration(duration)
 
 
     def dragEnterEvent(self, event):
@@ -157,6 +198,8 @@ class TimelineWidget(QWidget):
                 notify_duration_change=self.extend_if_needed,
                 notify_clip_selected=self.on_clip_selected,
                 sync_path=self.sync_path,
+                fps=self.fps,
+                timeline_duration=self.duration,
             )
             self.track_widgets.append(track_widget)
             self.layout.addWidget(track_widget)
@@ -227,6 +270,8 @@ class TimelineWidget(QWidget):
             self.duration = required_duration
             self.timeline_area.setMinimumWidth(self.duration * PIXELS_PER_SECOND)
             self.ruler.set_duration(self.duration)
+            for track_widget in self.track_widgets:
+                track_widget.set_timeline_duration(self.duration)
 
     def on_clip_selected(self, clip_widget):
         self.selected_clip = clip_widget

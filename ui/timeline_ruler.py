@@ -40,15 +40,6 @@ class TimelineRuler(QWidget):
 
         height = self.height()
 
-        total_frames = int(round(self.duration * self.fps))
-        frame_step_pixels = self.pixels_per_second / self.fps if self.fps else 0
-        minor_tick_height = max(6, height // 3)
-
-        if frame_step_pixels:
-            for frame_index in range(total_frames + 1):
-                x = int(round(frame_index * frame_step_pixels))
-                painter.drawLine(x, 0, x, minor_tick_height)
-
         num_seconds = int(self.duration) + 1
         for sec in range(num_seconds):
             x = int(round(sec * self.pixels_per_second))
