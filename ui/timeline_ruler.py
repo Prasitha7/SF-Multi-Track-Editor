@@ -13,14 +13,14 @@ class TimelineRuler(QWidget):
         self.frame_start = int(frame_start)
         self.fps = float(fps)
         self.clip_start_seconds = float(clip_start_seconds)
-        self.duration = int(duration)
+        self.duration = float(duration)
 
         self.setFixedHeight(40)
-        self.setMinimumWidth(self.duration * self.pixels_per_second)
+        self.setMinimumWidth(int(self.duration * self.pixels_per_second))
 
     def set_duration(self, duration):
-        self.duration = int(duration)
-        self.setMinimumWidth(self.duration * self.pixels_per_second)
+        self.duration = float(duration)
+        self.setMinimumWidth(int(self.duration * self.pixels_per_second))
         self.update()
 
     def format_time(self, seconds):
@@ -39,9 +39,19 @@ class TimelineRuler(QWidget):
         painter.setPen(pen)
 
         height = self.height()
+
+        total_frames = int(round(self.duration * self.fps))
+        frame_step_pixels = self.pixels_per_second / self.fps if self.fps else 0
+        minor_tick_height = max(6, height // 3)
+
+        if frame_step_pixels:
+            for frame_index in range(total_frames + 1):
+                x = int(round(frame_index * frame_step_pixels))
+                painter.drawLine(x, 0, x, minor_tick_height)
+
         num_seconds = int(self.duration) + 1
         for sec in range(num_seconds):
-            x = sec * self.pixels_per_second
+            x = int(round(sec * self.pixels_per_second))
             painter.drawLine(x, 0, x, height)
 
             frame_number = self.frame_start + int(round((self.clip_start_seconds + sec) * self.fps))
