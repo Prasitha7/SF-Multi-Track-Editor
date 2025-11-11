@@ -68,10 +68,12 @@ def load_session_from_file(session_path: str) -> Timeline:
                 clip = AudioClip(
                     file_path,
                     start_time=clip_data.get("start_time", 0.0),
-                    trim_start=clip_data.get("trim_start", 0.0),
-                    trim_end=clip_data.get("trim_end", None)
                 )
                 clip.source_path = file_path
+                clip.trim_start = clip_data.get("trim_start", 0.0)
+                clip.trim_end = clip_data.get("trim_end", clip.duration)
+                if clip.trim_start != 0.0 or clip.trim_end != clip.duration:
+                    clip.trim(clip.trim_start, clip.trim_end)
                 track.add_clip(clip)
             except Exception as e:
                 print(f"[ERROR] Failed to load clip {clip_data['file']}: {e}")
