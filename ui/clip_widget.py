@@ -8,12 +8,13 @@ from pydub import AudioSegment
 class ClipWidget(QWidget):
     RESIZE_MARGIN = 10
 
-    def __init__(self, audio_segment: AudioSegment, pixels_per_second=100, parent=None):
+    def __init__(self, audio_segment: AudioSegment, pixels_per_second=100, parent=None, on_properties_changed=None):
         super().__init__(parent)
         self.original_audio = audio_segment
         self.start_time_offset = 0.0
         self.end_time_offset = 0.0
         self.pixels_per_second = pixels_per_second
+        self.on_properties_changed = on_properties_changed
 
         self.selected = False
         self.selected_side = None  # 'left', 'right', or None
@@ -24,7 +25,7 @@ class ClipWidget(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
 
-    def update_audio_clip(self):
+    def update_audio_clip(self, notify=True):
         start_ms = int(self.start_time_offset * 1000)
         end_ms = len(self.original_audio) - int(self.end_time_offset * 1000)
         self.audio_clip = self.original_audio[start_ms:end_ms]
@@ -32,6 +33,8 @@ class ClipWidget(QWidget):
         self.samples = self.extract_samples(self.audio_clip)
         self.setFixedWidth(int(self.duration * self.pixels_per_second))
         self.update()
+        if notify:
+            self._emit_properties_changed()
 
     def extract_samples(self, segment):
         samples = np.array(segment.get_array_of_samples())
@@ -94,35 +97,76 @@ class ClipWidget(QWidget):
 
         self.update()
 
+    def _step_from_modifiers(self, modifiers: Qt.KeyboardModifier) -> float:
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            return 0.01
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            return 1.0
+        return 0.1
+
+    def _max_start_offset(self) -> float:
+        total_duration = len(self.original_audio) / 1000.0
+        return max(0.0, total_duration - self.end_time_offset - 0.001)
+
+    def _max_end_offset(self) -> float:
+        total_duration = len(self.original_audio) / 1000.0
+        return max(0.0, total_duration - self.start_time_offset - 0.001)
+
+    def _move_clip(self, delta_seconds: float):
+        delta_pixels = int(round(delta_seconds * self.pixels_per_second))
+        if delta_pixels == 0:
+            return
+
+        new_x = self.x() + delta_pixels
+        max_x = max(0, (self.parent().width() - self.width()) if self.parent() else 0)
+        new_x = max(0, min(new_x, max_x))
+        if new_x != self.x():
+            self.move(new_x, self.y())
+            self._emit_properties_changed()
+
+    def _emit_properties_changed(self):
+        if callable(self.on_properties_changed):
+            self.on_properties_changed(self)
+
     def keyPressEvent(self, event: QKeyEvent):
         if not self.selected:
             return
 
-        if self.selected_side is None:
-            return
-
-        # How much to trim
-        small_step = 0.1
-        large_step = 1.0
-        step = large_step if event.modifiers() == Qt.KeyboardModifier.ShiftModifier else small_step
+        step = self._step_from_modifiers(event.modifiers())
+        handled = False
 
         if self.selected_side == 'left':
             if event.key() == Qt.Key.Key_Left:
-                self.start_time_offset += step
+                self.start_time_offset = min(self._max_start_offset(), self.start_time_offset + step)
                 self.update_audio_clip()
+                handled = True
             elif event.key() == Qt.Key.Key_Right:
                 if self.start_time_offset - step >= 0:
-                    self.start_time_offset -= step
+                    self.start_time_offset = max(0.0, self.start_time_offset - step)
                     self.update_audio_clip()
+                    handled = True
 
-        if self.selected_side == 'right':
+        elif self.selected_side == 'right':
             if event.key() == Qt.Key.Key_Left:
                 if self.end_time_offset - step >= 0:
-                    self.end_time_offset -= step
+                    self.end_time_offset = max(0.0, self.end_time_offset - step)
                     self.update_audio_clip()
+                    handled = True
             elif event.key() == Qt.Key.Key_Right:
-                self.end_time_offset += step
+                self.end_time_offset = min(self._max_end_offset(), self.end_time_offset + step)
                 self.update_audio_clip()
+                handled = True
+
+        else:
+            if event.key() == Qt.Key.Key_Left:
+                self._move_clip(-step)
+                handled = True
+            elif event.key() == Qt.Key.Key_Right:
+                self._move_clip(step)
+                handled = True
+
+        if handled:
+            event.accept()
 
     def get_properties(self):
         return {
