@@ -285,6 +285,9 @@ class TimelineWidget(QWidget):
                 track_widget.set_timeline_duration(self.duration)
 
     def on_clip_selected(self, clip_widget):
+        if hasattr(self, 'selected_clip') and self.selected_clip is not clip_widget:
+            self.selected_clip.deselect()
+
         self.selected_clip = clip_widget
         props = clip_widget.get_properties()
         self.properties_panel.update_fields(props)

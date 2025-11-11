@@ -22,7 +22,7 @@ class ClipWidget(QWidget):
         self.update_audio_clip()
         self.setMinimumHeight(80)
 
-        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
 
     def update_audio_clip(self, notify=True):
@@ -81,6 +81,9 @@ class ClipWidget(QWidget):
             painter.fillRect(self.width() - self.RESIZE_MARGIN, 0, self.RESIZE_MARGIN, self.height(), QColor(180, 180, 180))
 
     def mousePressEvent(self, event: QMouseEvent):
+        if event.button() != Qt.MouseButton.LeftButton:
+            return super().mousePressEvent(event)
+
         if event.pos().x() <= self.RESIZE_MARGIN:
             self.selected_side = 'left'
         elif event.pos().x() >= self.width() - self.RESIZE_MARGIN:
@@ -88,13 +91,20 @@ class ClipWidget(QWidget):
         else:
             self.selected_side = None
 
-        if self.selected:
-            self.selected = False
-            self.clearFocus()
-        else:
+        if not self.selected:
             self.selected = True
-            self.setFocus()
 
+        self.setFocus()
+        self.update()
+        event.accept()
+
+    def deselect(self):
+        if not self.selected:
+            return
+
+        self.selected = False
+        self.selected_side = None
+        self.clearFocus()
         self.update()
 
     def _step_from_modifiers(self, modifiers: Qt.KeyboardModifier) -> float:
