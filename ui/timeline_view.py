@@ -64,13 +64,14 @@ class TrackClipArea(QWidget):
 
 
 class TrackWidget(QFrame):
-    def __init__(self, track_number, backend_track, notify_duration_change, notify_clip_selected, sync_path, fps, timeline_duration):
+    def __init__(self, track_number, backend_track, notify_duration_change, notify_clip_selected, notify_clip_updated, sync_path, fps, timeline_duration):
         super().__init__()
         self.sync_path = sync_path
         self.track_number = track_number
         self.backend_track = backend_track
         self.notify_duration_change = notify_duration_change
         self.notify_clip_selected = notify_clip_selected
+        self.notify_clip_updated = notify_clip_updated
         self.fps = fps
 
         self.setAcceptDrops(True)
@@ -127,7 +128,12 @@ class TrackWidget(QFrame):
                     clip.source_path = asset_path  # make sure AudioClip supports this
                     self.backend_track.add_clip(clip)
 
-                    clip_widget = ClipWidget(clip.audio, pixels_per_second=PIXELS_PER_SECOND, parent=self.clip_area)
+                    clip_widget = ClipWidget(
+                        clip.audio,
+                        pixels_per_second=PIXELS_PER_SECOND,
+                        parent=self.clip_area,
+                        on_properties_changed=self.handle_clip_properties_changed,
+                    )
                     clip_widget.move(self.current_x, 0)
                     clip_widget.show()
 
@@ -147,6 +153,10 @@ class TrackWidget(QFrame):
                 self.notify_clip_selected(clip_widget)
             ClipWidget.mousePressEvent(clip_widget, event)
         return handler
+
+    def handle_clip_properties_changed(self, clip_widget):
+        if callable(self.notify_clip_updated):
+            self.notify_clip_updated(clip_widget)
 
 
 class TimelineWidget(QWidget):
@@ -197,6 +207,7 @@ class TimelineWidget(QWidget):
                 track,
                 notify_duration_change=self.extend_if_needed,
                 notify_clip_selected=self.on_clip_selected,
+                notify_clip_updated=self.on_clip_properties_changed,
                 sync_path=self.sync_path,
                 fps=self.fps,
                 timeline_duration=self.duration,
@@ -274,6 +285,9 @@ class TimelineWidget(QWidget):
                 track_widget.set_timeline_duration(self.duration)
 
     def on_clip_selected(self, clip_widget):
+        if hasattr(self, 'selected_clip') and self.selected_clip is not clip_widget:
+            self.selected_clip.deselect()
+
         self.selected_clip = clip_widget
         props = clip_widget.get_properties()
         self.properties_panel.update_fields(props)
@@ -303,6 +317,11 @@ class TimelineWidget(QWidget):
         # Refresh property panel to reflect true values after update
         props = self.selected_clip.get_properties()
         self.properties_panel.update_fields(props)
+
+    def on_clip_properties_changed(self, clip_widget):
+        if hasattr(self, 'selected_clip') and self.selected_clip is clip_widget:
+            props = clip_widget.get_properties()
+            self.properties_panel.update_fields(props)
 
     def start_playback(self):
         if self.playing:
